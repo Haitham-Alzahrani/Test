@@ -283,21 +283,55 @@ class FlightSearchService : AccessibilityService() {
     }
 
     private fun hasFlightResultIndicators(screenText: String, allText: List<String>): Boolean {
-        // STRONG requirement: must see a price indicator
-        // Saudi airline apps show prices like "450 SAR", "SAR 450", "1,200 SR"
-        val hasSarPrice = screenText.contains(" sar") ||
-            screenText.contains("sar ") ||
-            Regex("\\d+\\s*sar", RegexOption.IGNORE_CASE).containsMatchIn(screenText) ||
-            Regex("sar\\s*\\d+", RegexOption.IGNORE_CASE).containsMatchIn(screenText) ||
-            Regex("\\d+\\s*sr\\b", RegexOption.IGNORE_CASE).containsMatchIn(screenText)
+        // Based on actual flight results screenshot:
+        //   - "Edit search" button (NOT "Search" alone, NOT "New Search")
+        //   - Airline name: "Saudia"
+        //   - Flight number: "SV1558" (pattern: 2 letters + digits)
+        //   - "Non-stop" or "1 stop" etc.
+        //   - Price: "963.7" (just a number, no SAR text)
+        //   - Times: "18:25", "20:25"
+        //
+        // We require "Edit search" (unique to results page) AND at least
+        // one flight-specific indicator.
 
-        if (!hasSarPrice) return false
-
-        // Extra safety: must NOT be on the search form or no-flights page
+        // Safety: must NOT be on search form or no-flights page
         if (screenText.contains("no flights found")) return false
         if (screenText.contains("finding the best flights")) return false
 
-        return true
+        // PRIMARY indicator: "Edit search" is ONLY on the results page
+        val hasEditSearch = screenText.contains("edit search")
+
+        // SECONDARY indicators (need at least 2 to confirm):
+        var score = 0
+
+        // Airline name
+        if (screenText.contains("saudia") || screenText.contains("flynas") ||
+            screenText.contains("flyadeal")) score++
+
+        // Flight number pattern (SV1558, XY123, etc.)
+        if (Regex("\\b[a-z]{2}\\d{3,4}\\b", RegexOption.IGNORE_CASE).containsMatchIn(screenText)) score++
+
+        // "Non-stop" or "X stop" with duration
+        if (screenText.contains("non-stop") || screenText.contains("nonstop") ||
+            Regex("\\d+\\s*stop", RegexOption.IGNORE_CASE).containsMatchIn(screenText)) score++
+
+        // Time pattern HH:MM (like 18:25, 20:25)
+        if (Regex("\\b\\d{1,2}:\\d{2}\\b").containsMatchIn(screenText)) score++
+
+        // Price pattern (decimal number like 963.7, 1200.0)
+        if (Regex("\\b\\d{3,}(\\.\\d)?\\b").containsMatchIn(screenText)) score++
+
+        // SAR text (if present)
+        if (screenText.contains("sar") || screenText.contains("sr ") ||
+            Regex("\\d+\\s*sar", RegexOption.IGNORE_CASE).containsMatchIn(screenText)) score++
+
+        // "Edit search" + any 1 flight indicator = CONFIRMED
+        if (hasEditSearch && score >= 1) return true
+
+        // No "Edit search" but 3+ strong indicators = also confirmed
+        if (score >= 3) return true
+
+        return false
     }
 
     // =========================================================================
