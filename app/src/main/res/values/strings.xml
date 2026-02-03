@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Flight Search Alert</string>
+    <string name="accessibility_service_description">This service monitors the flight search app. It automatically clicks Search, checks results, and alerts you when flights are found. When no flights are found, it clicks New Search and retries.</string>
+    <string name="start_monitoring">Start Monitoring</string>
+    <string name="stop_monitoring">Stop Monitoring</string>
+    <string name="status_idle">Status: Idle</string>
+    <string name="status_running">Status: Running</string>
+    <string name="enable_service">Enable Accessibility Service</string>
+    <string name="service_not_enabled">Accessibility Service is not enabled. Please enable it first.</string>
+    <string name="search_count">Search attempts: %d</string>
+    <string name="flight_found">FLIGHT FOUND!</string>
+    <string name="no_flights">No flights found - retrying...</string>
+</resources>
