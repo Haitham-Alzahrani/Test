@@ -45,20 +45,22 @@ class FlightSearchService : AccessibilityService() {
     private var mediaPlayer: MediaPlayer? = null
     private var retryDelaySeconds = 5L
 
-    // Screen state detection
+    // The 3 pages the user described:
+    // Page 1: Search form  (has "Search" button, route info, passenger, economy)
+    // Page 2: Loading       (has "Finding the best flights")
+    // Page 3: Results       (has flights with prices OR "No Flights Found")
     private enum class ScreenState {
         UNKNOWN,
-        SEARCH_FORM,       // The main search form with "Search" button
-        LOADING,            // "Finding the best flights for you"
-        NO_FLIGHTS,         // "No Flights Found" screen
-        FLIGHT_RESULTS      // Actual flight results are shown
+        SEARCH_FORM,
+        LOADING,
+        NO_FLIGHTS,
+        FLIGHT_RESULTS
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         addLog("Service connected")
-        Log.d(TAG, "Accessibility service connected")
     }
 
     override fun onDestroy() {
@@ -67,7 +69,6 @@ class FlightSearchService : AccessibilityService() {
         isMonitoring = false
         stopAlarm()
         handler.removeCallbacksAndMessages(null)
-        addLog("Service destroyed")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -88,11 +89,9 @@ class FlightSearchService : AccessibilityService() {
         lastResult = "-"
         logMessages.clear()
         addLog("Started - delay: ${retryDelaySeconds}s")
-        addLog("Switch to the flight app now!")
+        addLog("Waiting for flight app screen...")
         notifyStatusChanged()
-
-        // Give user time to switch to the flight app
-        handler.postDelayed({ stepDetectAndAct() }, 3000)
+        handler.postDelayed({ stepDetectAndAct() }, 2000)
     }
 
     private fun stopMonitoring() {
@@ -109,25 +108,21 @@ class FlightSearchService : AccessibilityService() {
         }
         mediaPlayer = null
         isAlarmPlaying = false
-
-        // Stop vibration
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator
+                (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
                 getSystemService(VIBRATOR_SERVICE) as Vibrator
             }
             vibrator.cancel()
         } catch (_: Exception) {}
-
         addLog("Alarm stopped")
         notifyStatusChanged()
     }
 
     // =========================================================================
-    // MAIN LOOP: detect current screen state, then act accordingly
+    // MAIN LOOP
     // =========================================================================
 
     private fun stepDetectAndAct() {
@@ -135,147 +130,289 @@ class FlightSearchService : AccessibilityService() {
 
         val rootNode = rootInActiveWindow
         if (rootNode == null) {
-            addLog("Cannot access window - retrying...")
+            addLog("No window - waiting...")
             handler.postDelayed({ stepDetectAndAct() }, 2000)
             return
         }
 
-        // Collect all visible text on screen
+        // Collect ALL text visible on screen
         val allText = collectAllText(rootNode)
-        val screenText = allText.joinToString(" ").lowercase()
+        val joined = allText.joinToString(" ").lowercase()
 
-        // Log screen text for debugging (first time and periodically)
-        addLog("Screen: ${screenText.take(120)}...")
+        // Log a snippet for debugging
+        addLog("TXT: ${joined.take(150)}")
 
-        // Detect what screen we're on
-        val state = detectScreenState(screenText, allText)
-        addLog("Detected: $state")
+        val state = detectScreen(joined, allText)
+        addLog("=> $state")
 
         when (state) {
-            ScreenState.SEARCH_FORM -> {
-                // We're on the search form - click "Search"
-                addLog("Clicking Search button...")
-                val clicked = clickNodeWithText(rootNode, "Search")
-                if (clicked) {
-                    searchCount++
-                    addLog("Clicked Search (#$searchCount)")
-                    notifyStatusChanged()
-                    // Wait for loading/results
-                    handler.postDelayed({ stepDetectAndAct() }, 6000)
-                } else {
-                    addLog("Could not click Search - retrying")
-                    handler.postDelayed({ stepDetectAndAct() }, 3000)
-                }
-            }
-
-            ScreenState.LOADING -> {
-                // Still loading, wait and check again
-                addLog("Loading... waiting")
-                handler.postDelayed({ stepDetectAndAct() }, 3000)
-            }
-
-            ScreenState.NO_FLIGHTS -> {
-                // No flights found - click "New Search" to go back
-                addLog("No flights found - clicking New Search")
-                lastResult = "No flights (#$searchCount)"
-                notifyStatusChanged()
-
-                val clicked = clickNodeWithText(rootNode, "New Search")
-                if (clicked) {
-                    addLog("Clicked New Search, waiting ${retryDelaySeconds}s...")
-                    handler.postDelayed({ stepDetectAndAct() }, retryDelaySeconds * 1000)
-                } else {
-                    addLog("New Search not clickable, retrying...")
-                    handler.postDelayed({ stepDetectAndAct() }, 3000)
-                }
-            }
-
-            ScreenState.FLIGHT_RESULTS -> {
-                // FLIGHTS FOUND!
-                addLog("*** FLIGHTS AVAILABLE! ***")
-                lastResult = "FLIGHTS AVAILABLE!"
-                notifyStatusChanged()
-                triggerAlarm()
-                // Stop the loop - alarm will keep ringing
-            }
-
-            ScreenState.UNKNOWN -> {
-                // Can't determine screen - DON'T trigger alarm
-                // Just wait and try again
-                addLog("Unknown screen state - waiting...")
-                handler.postDelayed({ stepDetectAndAct() }, 3000)
-            }
+            ScreenState.SEARCH_FORM -> handleSearchForm(rootNode)
+            ScreenState.LOADING -> handleLoading()
+            ScreenState.NO_FLIGHTS -> handleNoFlights(rootNode)
+            ScreenState.FLIGHT_RESULTS -> handleFlightResults()
+            ScreenState.UNKNOWN -> handleUnknown()
         }
     }
 
+    private fun handleSearchForm(rootNode: AccessibilityNodeInfo) {
+        addLog("Page 1: Search form - clicking Search...")
+        val clicked = clickSearchButton(rootNode)
+        if (clicked) {
+            searchCount++
+            addLog("Clicked Search (#$searchCount)")
+            notifyStatusChanged()
+            // Page 2 (loading) appears - wait before checking
+            handler.postDelayed({ stepDetectAndAct() }, 5000)
+        } else {
+            addLog("Search button click failed - retry")
+            handler.postDelayed({ stepDetectAndAct() }, 2000)
+        }
+    }
+
+    private fun handleLoading() {
+        addLog("Page 2: Loading - waiting...")
+        handler.postDelayed({ stepDetectAndAct() }, 3000)
+    }
+
+    private fun handleNoFlights(rootNode: AccessibilityNodeInfo) {
+        lastResult = "No flights (#$searchCount)"
+        addLog("Page 3: No flights - clicking New Search...")
+        notifyStatusChanged()
+
+        val clicked = clickNodeWithText(rootNode, "New Search")
+        if (clicked) {
+            addLog("Clicked New Search - waiting ${retryDelaySeconds}s")
+            // Wait then re-detect (should be back on Page 1)
+            handler.postDelayed({ stepDetectAndAct() }, retryDelaySeconds * 1000)
+        } else {
+            addLog("New Search click failed - retry")
+            handler.postDelayed({ stepDetectAndAct() }, 2000)
+        }
+    }
+
+    private fun handleFlightResults() {
+        addLog("*** FLIGHTS AVAILABLE! ***")
+        lastResult = "FLIGHTS AVAILABLE!"
+        notifyStatusChanged()
+        triggerAlarm()
+        // Stop looping - alarm rings until user stops it
+    }
+
+    private fun handleUnknown() {
+        // NOT the flight app, or transitional screen
+        // NEVER trigger alarm - just wait patiently
+        addLog("Not on flight app - waiting...")
+        handler.postDelayed({ stepDetectAndAct() }, 3000)
+    }
+
     // =========================================================================
-    // Screen state detection - uses ALL visible text to determine what screen
+    // SCREEN DETECTION
+    //
+    // The logic ONLY identifies screens it RECOGNIZES.
+    // Anything it doesn't recognize => UNKNOWN => wait (no alarm).
+    //
+    // Flight results require STRONG positive evidence (price in SAR).
     // =========================================================================
 
-    private fun detectScreenState(screenText: String, allText: List<String>): ScreenState {
-        // 1. Check for loading screen
+    private fun detectScreen(screenText: String, allText: List<String>): ScreenState {
+
+        // --- Page 2: Loading ---
+        // Screenshot shows: "Finding the best flights for you"
         if (screenText.contains("finding the best flights") ||
-            screenText.contains("finding the best") ||
-            (screenText.contains("finding") && screenText.contains("flights"))) {
+            screenText.contains("finding the best")) {
             return ScreenState.LOADING
         }
 
-        // 2. Check for "No Flights Found" screen
+        // --- Page 3a: No Flights Found ---
+        // Screenshot shows: "No Flights Found", "couldn't find any flights"
         if (screenText.contains("no flights found") ||
             screenText.contains("no flights") ||
-            (screenText.contains("couldn't find any flights") || screenText.contains("could not find any flights"))) {
+            screenText.contains("couldn't find any flights")) {
             return ScreenState.NO_FLIGHTS
         }
 
-        // 3. Check for search form (has the Search button AND route fields)
-        //    The search form typically shows: route, date, passenger count, class, and a Search button
-        val hasSearchButton = allText.any { it.equals("Search", ignoreCase = true) }
-        val hasRouteInfo = screenText.contains("ruh") || screenText.contains("riyadh")
-        val hasFormElements = screenText.contains("passenger") || screenText.contains("economy") ||
-                screenText.contains("business") || screenText.contains("round trip") ||
-                screenText.contains("one way")
-
-        if (hasSearchButton && (hasRouteInfo || hasFormElements)) {
+        // --- Page 1: Search Form ---
+        // Screenshot shows: "RUH - Riyadh", "NUM - NEOM", "Passenger",
+        //   "Economy", "Business", "Round trip", "One way", "Search" button
+        //   "Monthly Tickets", "Discounted Tickets"
+        val isSearchForm = hasSearchFormIndicators(screenText, allText)
+        if (isSearchForm) {
             return ScreenState.SEARCH_FORM
         }
 
-        // 4. Check for flight results - POSITIVE detection only
-        //    Flight results typically show: prices (SAR), times, flight numbers, "Select", "Book"
-        val hasPrice = screenText.contains("sar") ||
-                Regex("\\d{2,4}[.,]?\\d{0,2}\\s*(sar|sr|ر\\.س)").containsMatchIn(screenText) ||
-                allText.any { it.matches(Regex(".*\\d{3,}.*")) && (it.contains("SAR") || it.contains("SR")) }
-
-        val hasFlightIndicators = screenText.contains("select") ||
-                screenText.contains("book") ||
-                screenText.contains("depart") ||
-                screenText.contains("arrive") ||
-                screenText.contains("direct") ||
-                screenText.contains("stop") ||
-                screenText.contains("duration") ||
-                (screenText.contains("am") || screenText.contains("pm")) &&
-                Regex("\\d{1,2}:\\d{2}").containsMatchIn(screenText)
-
-        if (hasPrice || hasFlightIndicators) {
-            return ScreenState.FLIGHT_RESULTS
-        }
-
-        // 5. If we see "New Search" without "No Flights Found", might be a variant
-        val hasNewSearch = allText.any {
-            it.equals("New Search", ignoreCase = true) ||
-                    it.contains("New Search")
-        }
-        if (hasNewSearch) {
-            // "New Search" button exists but we didn't detect "No Flights" text
-            // This is likely the No Flights screen with text we couldn't read
+        // --- "New Search" button visible (fallback for No Flights page) ---
+        // If we see "New Search" text, it's the No Flights page even if
+        // we couldn't read the "No Flights Found" text
+        if (allText.any { it.contains("New Search", ignoreCase = true) }) {
             return ScreenState.NO_FLIGHTS
         }
 
-        // Can't determine - return UNKNOWN (will NOT trigger alarm)
+        // --- Page 3b: Flight Results (flights actually found) ---
+        // This is the screen we've NEVER seen (user always gets "No Flights").
+        // We require STRONG positive evidence: a price in SAR.
+        // This avoids false positives from home screen, app drawer, etc.
+        val hasFlightResults = hasFlightResultIndicators(screenText, allText)
+        if (hasFlightResults) {
+            return ScreenState.FLIGHT_RESULTS
+        }
+
+        // --- Anything else: UNKNOWN ---
+        // Home screen, app drawer, other apps, transition screens, etc.
+        // NEVER alarm on unknown.
         return ScreenState.UNKNOWN
     }
 
+    private fun hasSearchFormIndicators(screenText: String, allText: List<String>): Boolean {
+        // Must have a "Search" button (exact text, not "New Search")
+        val hasSearchButton = allText.any {
+            it.equals("Search", ignoreCase = true)
+        }
+        if (!hasSearchButton) return false
+
+        // Must also have at least one of the form elements from the screenshot
+        val formIndicators = listOf(
+            "ruh", "riyadh", "num", "neom",           // route
+            "passenger", "passengers",                  // passenger count
+            "economy", "business",                      // class
+            "round trip", "one way",                    // trip type
+            "monthly ticket", "discounted ticket",      // travel purpose
+            "departure", "select a departure",          // header
+            "travel purpose", "legs"                    // sections
+        )
+        return formIndicators.any { screenText.contains(it) }
+    }
+
+    private fun hasFlightResultIndicators(screenText: String, allText: List<String>): Boolean {
+        // STRONG requirement: must see a price indicator
+        // Saudi airline apps show prices like "450 SAR", "SAR 450", "1,200 SR"
+        val hasSarPrice = screenText.contains(" sar") ||
+            screenText.contains("sar ") ||
+            Regex("\\d+\\s*sar", RegexOption.IGNORE_CASE).containsMatchIn(screenText) ||
+            Regex("sar\\s*\\d+", RegexOption.IGNORE_CASE).containsMatchIn(screenText) ||
+            Regex("\\d+\\s*sr\\b", RegexOption.IGNORE_CASE).containsMatchIn(screenText)
+
+        if (!hasSarPrice) return false
+
+        // Extra safety: must NOT be on the search form or no-flights page
+        if (screenText.contains("no flights found")) return false
+        if (screenText.contains("finding the best flights")) return false
+
+        return true
+    }
+
     // =========================================================================
-    // Collect all visible text from the accessibility tree
+    // CLICK: Find "Search" button specifically
+    // Must be exact "Search" text, not "New Search" or "flight search alert"
+    // =========================================================================
+
+    private fun clickSearchButton(root: AccessibilityNodeInfo): Boolean {
+        val allNodes = mutableListOf<AccessibilityNodeInfo>()
+        collectAllNodes(root, allNodes)
+
+        // Find nodes where text is exactly "Search" (not "New Search", not "Flight Search Alert")
+        for (node in allNodes) {
+            val text = node.text?.toString()?.trim() ?: ""
+            val desc = node.contentDescription?.toString()?.trim() ?: ""
+
+            val isExactSearch = text.equals("Search", ignoreCase = true) ||
+                    desc.equals("Search", ignoreCase = true)
+
+            val isNotNewSearch = !text.contains("New", ignoreCase = true) &&
+                    !desc.contains("New", ignoreCase = true) &&
+                    !text.contains("Alert", ignoreCase = true) &&
+                    !desc.contains("Alert", ignoreCase = true) &&
+                    !text.contains("Flight Search", ignoreCase = true) &&
+                    !desc.contains("Flight Search", ignoreCase = true)
+
+            if (isExactSearch && isNotNewSearch) {
+                addLog("Found Search node: text='$text' desc='$desc'")
+                if (tryClickNode(node)) return true
+            }
+        }
+
+        // Also try findAccessibilityNodeInfosByText as backup
+        val nodes = root.findAccessibilityNodeInfosByText("Search")
+        for (node in nodes) {
+            val text = node.text?.toString()?.trim() ?: ""
+            val desc = node.contentDescription?.toString()?.trim() ?: ""
+            if (text.contains("New", ignoreCase = true) ||
+                desc.contains("New", ignoreCase = true) ||
+                text.contains("Alert", ignoreCase = true) ||
+                desc.contains("Alert", ignoreCase = true)) {
+                continue
+            }
+            addLog("Found Search via API: text='$text'")
+            if (tryClickNode(node)) return true
+        }
+
+        return false
+    }
+
+    // =========================================================================
+    // CLICK: Generic node by text
+    // =========================================================================
+
+    private fun clickNodeWithText(root: AccessibilityNodeInfo, targetText: String): Boolean {
+        // Try API search first
+        val nodes = root.findAccessibilityNodeInfosByText(targetText)
+        for (node in nodes) {
+            if (tryClickNode(node)) return true
+        }
+
+        // Walk tree
+        val allNodes = mutableListOf<AccessibilityNodeInfo>()
+        collectAllNodes(root, allNodes)
+        for (node in allNodes) {
+            val text = node.text?.toString() ?: ""
+            val desc = node.contentDescription?.toString() ?: ""
+            if (text.contains(targetText, ignoreCase = true) ||
+                desc.contains(targetText, ignoreCase = true)) {
+                if (tryClickNode(node)) return true
+            }
+        }
+
+        return false
+    }
+
+    // =========================================================================
+    // CLICK: Try all methods to click a node
+    // =========================================================================
+
+    private fun tryClickNode(node: AccessibilityNodeInfo): Boolean {
+        // 1. Direct click
+        if (node.isClickable) {
+            addLog("Direct click")
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            return true
+        }
+
+        // 2. Click parent chain (button might wrap a text view)
+        var parent = node.parent
+        var depth = 0
+        while (parent != null && depth < 6) {
+            if (parent.isClickable) {
+                addLog("Parent click (depth=$depth)")
+                parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            }
+            parent = parent.parent
+            depth++
+        }
+
+        // 3. Gesture tap at the node's screen coordinates
+        val rect = Rect()
+        node.getBoundsInScreen(rect)
+        if (rect.width() > 10 && rect.height() > 10) {
+            addLog("Gesture tap at (${rect.centerX()}, ${rect.centerY()})")
+            tapAt(rect.centerX().toFloat(), rect.centerY().toFloat())
+            return true
+        }
+
+        return false
+    }
+
+    // =========================================================================
+    // Helpers
     // =========================================================================
 
     private fun collectAllText(root: AccessibilityNodeInfo): List<String> {
@@ -287,86 +424,10 @@ class FlightSearchService : AccessibilityService() {
     private fun collectTextFromNode(node: AccessibilityNodeInfo, texts: MutableList<String>) {
         node.text?.toString()?.let { if (it.isNotBlank()) texts.add(it) }
         node.contentDescription?.toString()?.let { if (it.isNotBlank()) texts.add(it) }
-
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             collectTextFromNode(child, texts)
         }
-    }
-
-    // =========================================================================
-    // Click a node that contains the given text
-    // Uses both performAction and gesture tap for reliability
-    // =========================================================================
-
-    private fun clickNodeWithText(root: AccessibilityNodeInfo, targetText: String): Boolean {
-        // Strategy 1: findAccessibilityNodeInfosByText + click/tap
-        val nodes = root.findAccessibilityNodeInfosByText(targetText)
-        for (node in nodes) {
-            val nodeText = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
-
-            // For "Search" button, avoid matching "New Search" or partial matches
-            if (targetText.equals("Search", ignoreCase = true) &&
-                nodeText.contains("New", ignoreCase = true)) {
-                continue
-            }
-
-            if (tryClickNode(node)) return true
-        }
-
-        // Strategy 2: Walk the entire tree and find exact match
-        val allNodes = mutableListOf<AccessibilityNodeInfo>()
-        collectAllNodes(root, allNodes)
-
-        for (node in allNodes) {
-            val text = node.text?.toString() ?: ""
-            val desc = node.contentDescription?.toString() ?: ""
-
-            val matches = when {
-                targetText.equals("Search", ignoreCase = true) ->
-                    (text.equals("Search", ignoreCase = true) || desc.equals("Search", ignoreCase = true)) &&
-                            !text.contains("New", ignoreCase = true) && !desc.contains("New", ignoreCase = true)
-                else ->
-                    text.contains(targetText, ignoreCase = true) || desc.contains(targetText, ignoreCase = true)
-            }
-
-            if (matches) {
-                if (tryClickNode(node)) return true
-            }
-        }
-
-        return false
-    }
-
-    private fun tryClickNode(node: AccessibilityNodeInfo): Boolean {
-        // Try direct click first
-        if (node.isClickable) {
-            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            return true
-        }
-
-        // Try clicking parent chain
-        var parent = node.parent
-        var depth = 0
-        while (parent != null && depth < 5) {
-            if (parent.isClickable) {
-                parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return true
-            }
-            parent = parent.parent
-            depth++
-        }
-
-        // Fallback: gesture tap at node center
-        val rect = Rect()
-        node.getBoundsInScreen(rect)
-        if (rect.width() > 0 && rect.height() > 0) {
-            addLog("Tapping at (${rect.centerX()}, ${rect.centerY()})")
-            tapAt(rect.centerX().toFloat(), rect.centerY().toFloat())
-            return true
-        }
-
-        return false
     }
 
     private fun collectAllNodes(node: AccessibilityNodeInfo, list: MutableList<AccessibilityNodeInfo>) {
@@ -377,25 +438,17 @@ class FlightSearchService : AccessibilityService() {
         }
     }
 
-    // =========================================================================
-    // Gesture tap
-    // =========================================================================
-
     private fun tapAt(x: Float, y: Float) {
-        val path = Path()
-        path.moveTo(x, y)
-
+        val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 150))
             .build()
-
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                Log.d(TAG, "Tap completed at ($x, $y)")
+                addLog("Tap OK at ($x, $y)")
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.d(TAG, "Tap cancelled at ($x, $y)")
-                addLog("Tap cancelled at ($x, $y)")
+                addLog("Tap FAILED at ($x, $y)")
             }
         }, null)
     }
@@ -406,11 +459,9 @@ class FlightSearchService : AccessibilityService() {
 
     private fun triggerAlarm() {
         addLog("TRIGGERING ALARM!")
-
         try {
             val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -424,61 +475,40 @@ class FlightSearchService : AccessibilityService() {
                 start()
             }
             isAlarmPlaying = true
-
             val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
-
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_ALARM,
+                audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                0
+            )
         } catch (e: Exception) {
             addLog("Alarm error: ${e.message}")
-            Log.e(TAG, "Alarm error", e)
         }
-
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator
+                (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
                 getSystemService(VIBRATOR_SERVICE) as Vibrator
             }
-            val pattern = longArrayOf(0, 1000, 500, 1000, 500, 1000)
-            vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 500, 1000, 500, 1000), 0))
         } catch (e: Exception) {
             addLog("Vibrate error: ${e.message}")
         }
-
         notifyStatusChanged()
     }
 
-    // =========================================================================
-    // Accessibility event (unused - we use polling)
-    // =========================================================================
-
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-
-    override fun onInterrupt() {
-        addLog("Service interrupted")
-    }
-
-    // =========================================================================
-    // Logging
-    // =========================================================================
+    override fun onInterrupt() { addLog("Service interrupted") }
 
     private fun addLog(message: String) {
-        val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-        val timestamp = timeFormat.format(Date())
-        val logEntry = "[$timestamp] $message"
-        logMessages.add(0, logEntry)
-        if (logMessages.size > 200) {
-            logMessages.removeAt(logMessages.size - 1)
-        }
+        val ts = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        logMessages.add(0, "[$ts] $message")
+        if (logMessages.size > 200) logMessages.removeAt(logMessages.size - 1)
         Log.d(TAG, message)
     }
 
     private fun notifyStatusChanged() {
-        handler.post {
-            onStatusChanged?.invoke()
-        }
+        handler.post { onStatusChanged?.invoke() }
     }
 }
