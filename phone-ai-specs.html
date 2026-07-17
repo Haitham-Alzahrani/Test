@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone AI Specs</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, Roboto, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #111;
+    color: #eee;
+    line-height: 1.4;
+  }
+  h1 { font-size: 1.2rem; margin: 0 0 12px; }
+  section {
+    background: #1c1c1c;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9ad; margin: 0 0 8px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; padding: 3px 0; border-bottom: 1px solid #2a2a2a; }
+  .row:last-child { border-bottom: none; }
+  .key { color: #aaa; }
+  .val { text-align: right; font-family: ui-monospace, monospace; word-break: break-word; max-width: 60%; }
+  .ok { color: #6f6; }
+  .no { color: #f77; }
+  .verdict { font-size: 1rem; font-weight: 600; }
+  button {
+    width: 100%;
+    padding: 12px;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    background: #3a7afe;
+    color: white;
+    margin-bottom: 16px;
+  }
+  .note { font-size: 0.75rem; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>📱 Phone AI Capability Report</h1>
+<button id="copyBtn">Copy Report as Text</button>
+<div id="report"></div>
+
+<script>
+function addRow(container, key, val, cls) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<span class="key">${key}</span><span class="val ${cls || ''}">${val}</span>`;
+  container.appendChild(row);
+}
+
+function addSection(title) {
+  const sec = document.createElement('section');
+  const h2 = document.createElement('h2');
+  h2.textContent = title;
+  sec.appendChild(h2);
+  document.getElementById('report').appendChild(sec);
+  return sec;
+}
+
+async function main() {
+  const lines = [];
+  const log = (label, value) => lines.push(`${label}: ${value}`);
+
+  // ---------- DEVICE ----------
+  const device = addSection('Device');
+  const ua = navigator.userAgent;
+  const platform = navigator.platform || 'unknown';
+  addRow(device, 'User agent', ua);
+  addRow(device, 'Platform', platform);
+  log('User agent', ua);
+  log('Platform', platform);
+
+  // ---------- CPU ----------
+  const cpu = addSection('CPU');
+  const cores = navigator.hardwareConcurrency || 'unknown';
+  addRow(cpu, 'Logical cores', cores);
+  log('CPU cores', cores);
+
+  // ---------- MEMORY ----------
+  const mem = addSection('Memory');
+  const deviceMemory = navigator.deviceMemory
+    ? `~${navigator.deviceMemory} GB (approximate, Chrome-only, capped at 8)`
+    : 'not exposed by this browser';
+  addRow(mem, 'RAM estimate', deviceMemory);
+  log('RAM estimate', deviceMemory);
+
+  let storageEstimate = 'unavailable';
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const est = await navigator.storage.estimate();
+      const usedGb = (est.usage / 1e9).toFixed(2);
+      const quotaGb = (est.quota / 1e9).toFixed(2);
+      storageEstimate = `${usedGb} GB used / ${quotaGb} GB quota`;
+    } catch (e) { storageEstimate = 'error: ' + e.message; }
+  }
+  addRow(mem, 'Storage quota', storageEstimate);
+  log('Storage quota', storageEstimate);
+
+  // ---------- DISPLAY ----------
+  const disp = addSection('Display');
+  const screenRes = `${screen.width}×${screen.height} @ ${window.devicePixelRatio}x DPR`;
+  addRow(disp, 'Resolution', screenRes);
+  log('Screen', screenRes);
+  const touch = navigator.maxTouchPoints ?? 0;
+  addRow(disp, 'Max touch points', touch);
+  log('Max touch points', touch);
+
+  // ---------- NETWORK / BATTERY ----------
+  const misc = addSection('Network & Battery');
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const connType = conn ? `${conn.effectiveType || 'unknown'} (downlink ~${conn.downlink ?? '?'} Mbps)` : 'not exposed';
+  addRow(misc, 'Connection', connType);
+  log('Connection', connType);
+
+  let batteryText = 'not exposed / requires permission';
+  if (navigator.getBattery) {
+    try {
+      const b = await navigator.getBattery();
+      batteryText = `${Math.round(b.level * 100)}% ${b.charging ? '(charging)' : ''}`;
+    } catch (e) { /* leave default */ }
+  }
+  addRow(misc, 'Battery', batteryText);
+  log('Battery', batteryText);
+
+  // ---------- GPU (WebGL) ----------
+  const gpuSec = addSection('GPU (WebGL)');
+  let glRenderer = 'unavailable', glVendor = 'unavailable', glVersion = 'unavailable';
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    if (gl) {
+      glVersion = gl.getParameter(gl.VERSION);
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg) {
+        glRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+        glVendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+      } else {
+        glRenderer = gl.getParameter(gl.RENDERER);
+        glVendor = gl.getParameter(gl.VENDOR);
+      }
+    }
+  } catch (e) { glRenderer = 'error: ' + e.message; }
+  addRow(gpuSec, 'Renderer', glRenderer);
+  addRow(gpuSec, 'Vendor', glVendor);
+  addRow(gpuSec, 'WebGL version', glVersion);
+  log('GPU renderer', glRenderer);
+  log('GPU vendor', glVendor);
+  log('WebGL version', glVersion);
+
+  // ---------- AI ACCELERATION APIs ----------
+  const ai = addSection('On-Device AI Acceleration');
+
+  const webgpuSupported = !!navigator.gpu;
+  addRow(ai, 'WebGPU', webgpuSupported ? 'supported' : 'not supported', webgpuSupported ? 'ok' : 'no');
+  log('WebGPU', webgpuSupported);
+
+  let webgpuAdapterInfo = null;
+  if (webgpuSupported) {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) {
+        webgpuAdapterInfo = adapter.info
+          ? `${adapter.info.vendor || ''} ${adapter.info.architecture || ''} ${adapter.info.device || ''}`.trim()
+          : 'adapter acquired (details restricted)';
+        addRow(ai, 'WebGPU adapter', webgpuAdapterInfo || 'acquired');
+        log('WebGPU adapter', webgpuAdapterInfo);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  const webnnSupported = !!(navigator.ml && navigator.ml.createContext);
+  addRow(ai, 'WebNN', webnnSupported ? 'supported' : 'not supported', webnnSupported ? 'ok' : 'no');
+  log('WebNN', webnnSupported);
+
+  let wasmSimd = false;
+  try {
+    // Minimal valid WASM module that uses a SIMD instruction (v128.const).
+    wasmSimd = WebAssembly.validate(new Uint8Array([
+      0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11
+    ]));
+  } catch (e) { /* leave false */ }
+  addRow(ai, 'WASM SIMD', wasmSimd ? 'supported' : 'not supported', wasmSimd ? 'ok' : 'no');
+  log('WASM SIMD', wasmSimd);
+
+  const wasmThreads = typeof SharedArrayBuffer !== 'undefined';
+  addRow(ai, 'WASM threads (SharedArrayBuffer)', wasmThreads ? 'supported' : 'not supported', wasmThreads ? 'ok' : 'no');
+  log('WASM threads', wasmThreads);
+
+  // ---------- VERDICT ----------
+  const verdictSec = addSection('Verdict');
+  const ramGb = navigator.deviceMemory || 0;
+  let verdict, cls;
+  if (webgpuSupported && ramGb >= 6) {
+    verdict = 'Strong: WebGPU + enough RAM to run small/medium on-device models (e.g. quantized 1-3B LLMs, vision models) reasonably well in-browser.';
+    cls = 'ok';
+  } else if ((webgpuSupported || wasmSimd) && ramGb >= 4) {
+    verdict = 'Moderate: some acceleration available, but only small quantized models will run smoothly in-browser.';
+    cls = 'ok';
+  } else {
+    verdict = 'Limited: little exposed hardware acceleration and/or low RAM. Best suited to cloud-based AI rather than running models locally in-browser.';
+    cls = 'no';
+  }
+  const vDiv = document.createElement('div');
+  vDiv.className = 'verdict ' + cls;
+  vDiv.textContent = verdict;
+  verdictSec.appendChild(vDiv);
+  const noteDiv = document.createElement('div');
+  noteDiv.className = 'note';
+  noteDiv.textContent = 'Note: browsers deliberately restrict hardware access for privacy. This reflects what the browser exposes, not the phone\'s raw silicon (e.g. NPU/Neural Engine specs aren\'t visible to web pages). For exact chip specs, check Settings → About Phone.';
+  verdictSec.appendChild(noteDiv);
+  log('Verdict', verdict);
+
+  window.__report = lines.join('\n');
+}
+
+document.getElementById('copyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(window.__report || 'Report not ready yet.');
+    const btn = document.getElementById('copyBtn');
+    const old = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = old, 1200);
+  } catch (e) {
+    alert('Could not copy automatically. Select and copy the text manually.');
+  }
+});
+
+main();
+</script>
+</body>
+</html>
