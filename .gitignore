@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+haraj.db
+haraj.db-wal
+haraj.db-shm
