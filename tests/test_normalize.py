@@ -191,3 +191,19 @@ class TestModelNumbersAreNotAmounts:
 
     def test_a_real_price_beside_a_model_number_still_parses(self):
         assert parse_price("للبيع فورد اف 150 السوم 45 الف") == 45_000
+
+
+class TestGluedPronounSuffixes:
+    """Arabic glues pronouns onto nouns; markers must survive that."""
+
+    def test_mileage_marker_with_suffix(self):
+        # Live listing: `عدادها 50 الف` -- an odometer, not a 50,000 SAR price.
+        assert parse_price("فورد للبيع عدادها 50 الف مديل 2013") is None
+        assert parse_mileage("فورد للبيع عدادها 50 الف مديل 2013") == 50_000
+
+    def test_more_suffixed_forms(self):
+        assert parse_mileage("ممشاها 175 الف") == 175_000
+        assert parse_mileage("ماشيه 220 الف") == 220_000
+
+    def test_price_marker_with_suffix_still_a_price(self):
+        assert parse_price("سعرها 45 الف") == 45_000

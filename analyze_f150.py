@@ -31,7 +31,18 @@ YES_4WD = ["دبل", "4wd", "4x4", "دفع رباعي", "فور ويل", "دبل
 
 DAMAGED = ["مصدوم", "مصدومه", "حادث", "حوادث", "تشليح", "شاصي", "مضروب", "مشلح",
            "قطع غيار", "تعرض لحادث", "بودي مصدوم"]
-WANTED = ["مطلوب", "ادور", "أدور", "ابحث", "دور على", "wanted", "من يبيع", "ابغى اشتري"]
+# `خالي من الحوادث` and `بدون حوادث` mean the opposite of `حادث`, and 47 of the
+# listings in the mirror say exactly that.  Negated mentions are stripped out
+# before the damage vocabulary is applied.
+NOT_DAMAGED_RE = re.compile(
+    r"(?:خالي[هة]?\s+من|خلو\s+من|بدون|بلا|ما\s*ف[يى]ه|مافيه|لا\s+يوجد|غير|مب|مو)"
+    r"\s*(?:ال)?(?:حوادث|حادث|صدمات|مصدوم|صدام)")
+
+# A wanted ad announces itself in its TITLE.  Matching these anywhere in the
+# body flags every showroom whose boilerplate says `ابحث في حسابنا`.
+WANTED = ["مطلوب", "ادور", "أدور", "ابحث", "دور على", "wanted", "من يبيع",
+          "ابغى اشتري", "انا شاري", "انا شرا", "الي عنده", "اللي عنده",
+          "اشتري", "ابي اشتري", "للشراء", "نشتري"]
 
 ECOBOOST = ["ايكوبوست", "ايكو بوست", "اكوبوست", "ecoboost", "eco boost", "تيربو", "turbo", "3.5", "2.7"]
 V8 = ["v8", "ثمانيه سلندر", "8 سلندر", "ثماني سلندر", "ثمانية سلندر", "5.0", "6.2", "v 8", "8 سلندرات"]
@@ -147,8 +158,8 @@ def main() -> None:
         if "f250" in tags_f and "f150" not in tags_f:
             rejected += 1        # a different truck
             continue
-        if has(text, WANTED):
-            rejected += 1
+        if has(fold(r["title"]), WANTED):
+            rejected += 1        # wanted ad, not a car for sale
             continue
         if has(fold(r["title"]), SOLD) or has(text, SOLD):
             rejected += 1        # already sold
@@ -156,8 +167,8 @@ def main() -> None:
         if has(fold(r["title"]), PARTS):
             rejected += 1        # a part, not a truck
             continue
-        if has(text, DAMAGED):
-            rejected += 1
+        if has(NOT_DAMAGED_RE.sub(" ", text), DAMAGED):
+            rejected += 1        # damaged / salvage
             continue
         if has(text, RAPTOR):
             rejected += 1        # Raptor was never sold as a regular cab

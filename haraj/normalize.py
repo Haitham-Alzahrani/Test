@@ -330,9 +330,12 @@ def _nearest_marker(toks: list[str], i: int, radius: int = 3) -> tuple[str | Non
     and only the closer binding is the real mileage.
     """
     def kind_of(tok: str) -> str | None:
-        if tok in _MILEAGE_MARKERS:
+        # Arabic glues pronouns onto nouns: `عدادها`, `ممشاه`, `ماشيه`.  Exact
+        # token equality misses those, and a missed mileage marker lets the
+        # odometer be scored as a price -- `عدادها 50 الف` read as 50,000 SAR.
+        if _marker_hit(tok, _MILEAGE_MARKERS):
             return "mileage"
-        if tok in _PRICE_MARKERS:
+        if _marker_hit(tok, _PRICE_MARKERS):
             return "price"
         return None
 
@@ -348,10 +351,20 @@ def _nearest_marker(toks: list[str], i: int, radius: int = 3) -> tuple[str | Non
     return None, 0
 
 
+def _marker_hit(tok: str, markers: set[str]) -> bool:
+    """Marker match tolerant of glued Arabic pronoun suffixes."""
+    if tok in markers:
+        return True
+    for m in markers:
+        if len(m) >= 4 and tok.startswith(m) and 0 < len(tok) - len(m) <= 3:
+            return True
+    return False
+
+
 def _adjacent_strong_price(toks: list[str], i: int) -> bool:
     """True when a strong price marker sits directly beside `toks[i]`."""
     for j in (i - 1, i + 1):
-        if 0 <= j < len(toks) and toks[j] in _STRONG_PRICE_MARKERS:
+        if 0 <= j < len(toks) and _marker_hit(toks[j], _STRONG_PRICE_MARKERS):
             return True
     return False
 
@@ -409,7 +422,8 @@ def parse_amount(text: str | None, kind: str = "price") -> int | None:
             if len(digits) == 4 and mult == 1 and 1950 <= raw <= 2035:
                 if not (ctx & _CURRENCY_MARKERS):
                     continue
-            if ctx & _YEAR_MARKERS and mult == 1 and 1950 <= raw <= 2035:
+            if (any(_marker_hit(c, _YEAR_MARKERS) for c in ctx)
+                    and mult == 1 and 1950 <= raw <= 2035):
                 continue
             if ctx & _PHONE_MARKERS and len(digits) >= 7:
                 continue
