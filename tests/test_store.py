@@ -117,3 +117,75 @@ class TestSavedSearches:
         store.upsert(truck(4, "فورد F150 دبل"))       # older id than 5
         # Already behind the watermark, so it is not reported as new.
         assert store.watch_check("f150") == []
+
+
+class TestSingleCabOnly:
+    """Four-door bodies must never surface, by any route.
+
+    غمارتين (crew) and غمارة ونص (SuperCab) are both four-door on these years.
+    The exclusion is a phrase list, which is exactly why it has to stay
+    comma-separated -- see TestPhraseExclusion.
+    """
+
+    EXCLUDE = ("بدون دبل, غير دبل, غمارتين, غماره ونص, غمارة ونص, "
+               "غماره ونصف, غماره وربع, 4 ابواب, مطلوب, مصدوم")
+
+    @pytest.fixture()
+    def populated(self, store):
+        store.upsert(truck(1, "فورد F150 2014 غمارة دبل", is_4wd=1))
+        store.upsert(truck(2, "فورد F150 2014 غمارتين دبل", is_4wd=1))
+        store.upsert(truck(3, "فورد F150 2014 غمارة ونص دبل", is_4wd=1))
+        store.upsert(truck(4, "فورد F150 2014 غماره ونصف دبل", is_4wd=1))
+        store.upsert(truck(5, "فورد F150 2014 غماره وربع دبل", is_4wd=1))
+        store.upsert(truck(6, "فورد F150 2014 دبل 4 ابواب", is_4wd=1))
+        return store
+
+    def test_only_the_single_cab_survives(self, populated):
+        ids = [r["id"] for r in populated.search("f150", exclude=self.EXCLUDE)]
+        assert ids == [1]
+
+    def test_four_door_never_returns_even_on_a_matching_query(self, populated):
+        # Querying the 4WD term directly must still not surface a four-door.
+        ids = [r["id"] for r in populated.search("دبل", exclude=self.EXCLUDE)]
+        assert 2 not in ids and 3 not in ids and 6 not in ids
+
+
+class TestRequirePrice:
+    def test_blank_price_passes_by_default(self, store):
+        store.upsert(truck(1, "فورد F150 غمارة دبل", price=None))
+        store.upsert(truck(2, "فورد F150 غمارة دبل", price=44_000))
+        assert {r["id"] for r in store.search("f150", max_price=50_000)} == {1, 2}
+
+    def test_require_price_drops_blanks(self, store):
+        store.upsert(truck(1, "فورد F150 غمارة دبل", price=None))
+        store.upsert(truck(2, "فورد F150 غمارة دبل", price=44_000))
+        rows = store.search("f150", max_price=50_000, require_price=True)
+        assert [r["id"] for r in rows] == [2]
+
+    def test_require_price_survives_a_watch_round_trip(self, store):
+        store.upsert(truck(1, "فورد F150 غمارة دبل", price=None))
+        store.upsert(truck(2, "فورد F150 غمارة دبل", price=44_000))
+        store.watch_add("t", q="f150", max_price=50_000, require_price=True)
+        assert [r["id"] for r in store.watch_check("t")] == [2]
+
+
+class TestJunkGuards:
+    def test_min_price_drops_placeholder_amounts(self, store):
+        store.upsert(truck(1, "قطع F150 غمارة 4x4", price=4, is_4wd=1))
+        store.upsert(truck(2, "فورد F150 غمارة دبل", price=45_000, is_4wd=1))
+        rows = store.search("f150", min_price=15_000, max_price=50_000)
+        assert [r["id"] for r in rows] == [2]
+
+    def test_require_year_drops_listings_with_no_model_year(self, store):
+        store.upsert(Post(id=1, title="قطع F150 غمارة 4x4", author="a", year=None))
+        store.upsert(truck(2, "فورد F150 غمارة دبل", year=2014))
+        rows = store.search("f150", require_year=True)
+        assert [r["id"] for r in rows] == [2]
+
+    def test_guards_survive_a_watch_round_trip(self, store):
+        store.upsert(Post(id=1, title="قطع F150 غمارة 4x4", author="a",
+                          price=4, year=None))
+        store.upsert(truck(2, "فورد F150 غمارة دبل", price=45_000, year=2014))
+        store.watch_add("t", q="f150", max_price=50_000, min_price=15_000,
+                        require_price=True, require_year=True)
+        assert [r["id"] for r in store.watch_check("t")] == [2]

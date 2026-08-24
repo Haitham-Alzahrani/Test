@@ -110,7 +110,9 @@ def cmd_search(args: argparse.Namespace) -> int:
         rows = store.search(
             " ".join(args.query), exclude=args.exclude or "",
             max_price=args.max_price, min_year=args.min_year,
-            max_year=args.max_year, max_km=args.max_km, limit=args.limit,
+            max_year=args.max_year, max_km=args.max_km,
+            min_price=args.min_price, require_price=args.require_price,
+            require_year=args.require_year, limit=args.limit,
         )
         if args.json:
             print(json.dumps([dict(r) for r in rows], ensure_ascii=False, indent=2))
@@ -126,6 +128,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 args.name, q=args.q or "", exclude=args.exclude or "",
                 max_price=args.max_price, min_year=args.min_year,
                 max_year=args.max_year, max_km=args.max_km,
+                min_price=args.min_price, require_price=args.require_price,
+                require_year=args.require_year,
             )
             print(f"saved search '{args.name}'")
         elif args.action == "list":
@@ -178,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-year", type=int)
     p.add_argument("--max-km", type=int)
     p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--min-price", type=int)
+    p.add_argument("--require-price", action="store_true",
+                   help="only listings that state a price (blank no longer passes)")
+    p.add_argument("--require-year", action="store_true",
+                   help="only listings with a known model year")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_search)
 
@@ -190,6 +199,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-year", type=int)
     p.add_argument("--max-year", type=int)
     p.add_argument("--max-km", type=int)
+    p.add_argument("--min-price", type=int)
+    p.add_argument("--require-price", action="store_true",
+                   help="only listings that state a price (blank no longer passes)")
+    p.add_argument("--require-year", action="store_true",
+                   help="only listings with a known model year")
     p.add_argument("--no-advance", action="store_true")
     p.set_defaults(func=cmd_watch)
     return ap

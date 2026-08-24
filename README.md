@@ -74,6 +74,35 @@ body is *merged*, not chosen: the meta description holds the seller's prose, the
 longest Arabic text run holds the attribute block Haraj prepends, and you want
 both.
 
+### Single cab only
+
+`analyze_f150.py` drops any four-door body from the corpus **before any other
+test**, so a crew cab (`غمارتين`) or SuperCab (`غمارة ونص`) can never reach the
+report as a match, a near miss or an unknown. SuperCab counts as four-door: on
+these model years its rear half-doors make it a 4dr body. `market_compare.py`
+likewise never prints a four-door listing.
+
+At the search layer the same rule is expressed as exclusion phrases, which is
+exactly why they must stay comma-separated — see the phrase-exclusion note
+below. `tests/test_store.py::TestSingleCabOnly` proves a four-door cannot come
+back even from a query that matches it on every other term.
+
+### Junk guards
+
+Parts ads carry the same tags as the trucks and often name a placeholder price.
+`--min-price`, `--require-price` and `--require-year` keep them out of search
+and watch results without hand-maintained vocabulary:
+
+```bash
+python -m haraj.cli watch add f150 --q "f150 غمارة دبل" \
+  --min-year 2011 --max-year 2017 --require-year \
+  --max-km 200000 --min-price 15000 --max-price 50000 --require-price \
+  --exclude "بدون دبل, غير دبل, غمارتين, غماره ونص, غماره ونصف, غماره وربع, 4 ابواب, مطلوب, مصدوم"
+```
+
+`--require-price` overrides the default that a blank price passes a
+`--max-price` filter.
+
 ### Politeness
 
 ~0.5 req/s by default with jitter, exponential backoff on 429/5xx, and a real

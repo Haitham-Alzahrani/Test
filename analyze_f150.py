@@ -19,9 +19,19 @@ from haraj.normalize import fold
 DB = sys.argv[1] if len(sys.argv) > 1 else "haraj.db"
 
 # ---- vocabulary ---------------------------------------------------------
-CREW = ["غمارتين", "غمارتان", "crew cab", "supercrew", "دبل كابين", "غمارتيين"]
-SUPER = ["غماره ونص", "غمارة ونص", "غماره و نص", "supercab", "super cab", "extended cab", "غمارهونص"]
-REG = ["غماره", "غمارة", "regular cab", "single cab", "استاندر", "ستاندر", "غماره واحده"]
+CREW = ["غمارتين", "غمارتان", "crew cab", "supercrew", "دبل كابين", "غمارتيين",
+        "غمارتين كامله", "4 ابواب", "اربع ابواب", "4dr", "4 دور"]
+SUPER = ["غماره ونص", "غمارة ونص", "غماره و نص", "supercab", "super cab",
+         "extended cab", "غمارهونص", "غماره ونصف", "غمارة ونصف", "غماره وربع",
+         "غمارة و ربع", "غماره و ربع"]
+REG = ["غماره", "غمارة", "regular cab", "single cab", "استاندر", "ستاندر",
+       "غماره واحده", "غمارة واحدة", "غماره وحده"]
+
+# SINGLE CAB ONLY.  A four-door truck is never a match, never a near miss and
+# never an "unknown" -- it is dropped from the corpus before any other test, so
+# it cannot reach the report through any path.  SuperCab (غمارة ونص) counts as
+# four-door: on these years its rear half-doors make it a 4dr body.
+FOUR_DOOR = CREW + SUPER
 
 # Elongation-tolerant: sellers write `بدووون دبل` for emphasis, which folds to
 # `بدوون دبل` and never matches a fixed string.
@@ -173,6 +183,9 @@ def main() -> None:
         if has(text, RAPTOR):
             rejected += 1        # Raptor was never sold as a regular cab
             continue
+        if has(text, FOUR_DOOR):
+            rejected += 1        # four-door body: excluded outright
+            continue
 
         # A listing with no car field filled in at all and a parts-shaped title
         # is an accessory ad riding the same tag.
@@ -203,10 +216,9 @@ def main() -> None:
         tx_ok, tx_note = transmission_ok(year, engine)
         if not tx_ok:
             fails.append(f"transmission: {tx_note}")
-        if cab == "crew":
-            fails.append("cab: crew (غمارتين)")
-        elif cab == "supercab":
-            fails.append("cab: supercab (غمارة ونص)")
+        # Four-door bodies were dropped above, so the only cab state left to
+        # fail on is a cab that was never stated.
+        assert cab in ("regular", "unknown"), cab
         if fourwd == "no":
             fails.append("4wd: no")
         if km is not None and km >= 200_000:

@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     min_year   INTEGER,
     max_year   INTEGER,
     max_km     INTEGER,
+    min_price  INTEGER,
+    require_price INTEGER DEFAULT 0,  -- 1 = a listing with no price never matches
+    require_year  INTEGER DEFAULT 0,  -- 1 = a listing with no model year never matches
     last_seen  INTEGER DEFAULT 0,   -- post-id watermark
     created_at INTEGER
 );
@@ -134,6 +137,25 @@ class Store:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self._migrate()
+
+    # `CREATE TABLE IF NOT EXISTS` will not add a column to a database that
+    # already exists, so new columns are applied here.
+    _ADDED_COLUMNS = {
+        "posts": [("kind", "TEXT")],
+        "saved_searches": [("require_price", "INTEGER DEFAULT 0"),
+                           ("require_year", "INTEGER DEFAULT 0"),
+                           ("min_price", "INTEGER")],
+    }
+
+    def _migrate(self) -> None:
+        for table, columns in self._ADDED_COLUMNS.items():
+            have = {r["name"] for r in
+                    self.db.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns:
+                if name not in have:
+                    self.db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+        self.db.commit()
 
     # -- lifecycle ---------------------------------------------------------
     def close(self) -> None:
@@ -208,9 +230,12 @@ class Store:
         *,
         exclude: str = "",
         max_price: int | None = None,
+        min_price: int | None = None,
         min_year: int | None = None,
         max_year: int | None = None,
         max_km: int | None = None,
+        require_price: bool = False,
+        require_year: bool = False,
         since_id: int | None = None,
         limit: int = 50,
         collapse_dupes: bool = True,
@@ -251,9 +276,21 @@ class Store:
                 args.append(f"%{bad}%")
 
         if max_price is not None:
-            # No price at all counts as "no price listed" and passes.
-            where.append("(p.price IS NULL OR p.price <= ?)")
+            if require_price:
+                # Caller wants only listings that actually state a number.
+                where.append("(p.price IS NOT NULL AND p.price <= ?)")
+            else:
+                # No price at all counts as "no price listed" and passes.
+                where.append("(p.price IS NULL OR p.price <= ?)")
             args.append(max_price)
+        elif require_price:
+            where.append("p.price IS NOT NULL")
+        if min_price is not None:
+            # A pickup does not sell for 4 riyals; that is a parts ad.
+            where.append("(p.price IS NULL OR p.price >= ?)")
+            args.append(min_price)
+        if require_year:
+            where.append("p.year IS NOT NULL")
         if min_year is not None:
             where.append("(p.year IS NULL OR p.year >= ?)")
             args.append(min_year)
@@ -291,13 +328,19 @@ class Store:
     def watch_add(self, name: str, **kw: Any) -> None:
         self.db.execute(
             "INSERT INTO saved_searches (name,q,exclude,max_price,min_year,max_year,"
-            "max_km,last_seen,created_at) VALUES (?,?,?,?,?,?,?,?,?) "
+            "max_km,min_price,require_price,require_year,last_seen,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(name) DO UPDATE SET q=excluded.q, exclude=excluded.exclude,"
             " max_price=excluded.max_price, min_year=excluded.min_year,"
-            " max_year=excluded.max_year, max_km=excluded.max_km",
+            " max_year=excluded.max_year, max_km=excluded.max_km,"
+            " min_price=excluded.min_price,"
+            " require_price=excluded.require_price,"
+            " require_year=excluded.require_year",
             (name, kw.get("q", ""), kw.get("exclude", ""), kw.get("max_price"),
              kw.get("min_year"), kw.get("max_year"), kw.get("max_km"),
-             kw.get("last_seen", 0), int(time.time())),
+             kw.get("min_price"), int(bool(kw.get("require_price"))),
+             int(bool(kw.get("require_year"))), kw.get("last_seen", 0),
+             int(time.time())),
         )
         self.db.commit()
 
@@ -316,6 +359,8 @@ class Store:
         hits = self.search(
             row["q"] or "", exclude=row["exclude"] or "", max_price=row["max_price"],
             min_year=row["min_year"], max_year=row["max_year"], max_km=row["max_km"],
+            min_price=row["min_price"], require_price=bool(row["require_price"]),
+            require_year=bool(row["require_year"]),
             since_id=row["last_seen"] or 0, limit=limit,
         )
         if advance:

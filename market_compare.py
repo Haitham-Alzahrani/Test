@@ -30,8 +30,9 @@ PARTS = ["قطع غيار", "كتباك", "شمعه", "كبوت", "صدام", "�
          "شبك", "مرايا", "يايات", "دفريشن", "صندوق", "حوض", "قزاز", "بطاري"]
 NEG_4WD = re.compile(
     r"(?:بدو+ن|غير|بلا|ما\s*ف[يى]ه|مافيه|مب|مو|ليس)\s*(?:دبل|4wd|4x4)")
-CREW = ["غمارتين", "crew cab", "supercrew"]
-SUPER = ["غماره ونص", "غمارة ونص", "supercab", "extended cab"]
+CREW = ["غمارتين", "crew cab", "supercrew", "4 ابواب", "اربع ابواب", "4dr"]
+SUPER = ["غماره ونص", "غمارة ونص", "supercab", "extended cab", "غماره ونصف",
+         "غماره وربع", "غمارة و ربع"]
 REG = ["غماره", "غمارة", "استاندر", "ستاندر", "regular cab", "single cab"]
 V8 = ["v8", "ثمانيه سلندر", "8 سلندر", "ثماني سلندر", "5.0", "6.2", "8سلندر", "8 سرندل"]
 V6 = ["v6", "سته سلندر", "6 سلندر", "ست سلندر", "3.7", "3.5", "6سلندر", "6 سرندل"]
@@ -77,6 +78,11 @@ def pct(values, x):
     return 100.0 * sum(1 for v in values if v < x) / len(values)
 
 
+def is_four_door(c) -> bool:
+    """SuperCab and crew cab both count as four-door and are never listed."""
+    return c["cab"] in ("crew", "super")
+
+
 def line(c, mark=""):
     km = f"{c['km']:,}" if c["km"] else "?"
     p = f"{c['p']:,}" if c["p"] else "no price"
@@ -107,14 +113,14 @@ def main():
     print(f"\nSAME PRICE, what else {tgt['p']-5000:,}-{tgt['p']+5000:,} SAR buys "
           f"({tgt['y']-1}-{tgt['y']+1}):")
     band = [c for c in cars if c["p"] and abs(c["p"] - tgt["p"]) <= 5_000
-            and abs(c["y"] - tgt["y"]) <= 1]
+            and abs(c["y"] - tgt["y"]) <= 1 and not is_four_door(c)]
     for c in sorted(band, key=lambda c: c["km"] or 9e9):
         print(line(c, "   <-- TARGET" if c["id"] == TARGET else ""))
 
     print(f"\nSAME MILEAGE, what a {tgt['km']-30000:,}-{tgt['km']+30000:,} km "
           f"truck costs ({tgt['y']-1}-{tgt['y']+1}):")
     near = [c for c in cars if c["km"] and abs(c["km"] - tgt["km"]) <= 30_000
-            and abs(c["y"] - tgt["y"]) <= 1]
+            and abs(c["y"] - tgt["y"]) <= 1 and not is_four_door(c)]
     for c in sorted(near, key=lambda c: c["p"] or 9e9):
         print(line(c, "   <-- TARGET" if c["id"] == TARGET else ""))
 
