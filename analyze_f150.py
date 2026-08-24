@@ -183,7 +183,10 @@ def main() -> None:
         # Likewise a "price" of a few riyals or of over two million is noise.
         if price is not None and not (1_000 <= price <= 2_000_000):
             price = None
-        no_price = price is None or has(text, NO_PRICE_WORDS)
+        # `على السوم` / `بدل` / blank all count as no price and PASS.  But a
+        # number attached to the sum -- `السوم السوم (((( 100 ))))` -- is a
+        # stated floor of 100,000 SAR, not a blank.
+        no_price = price is None
 
         fails = []
         tx_ok, tx_note = transmission_ok(year, engine)
@@ -197,7 +200,7 @@ def main() -> None:
             fails.append("4wd: no")
         if km is not None and km >= 200_000:
             fails.append(f"mileage: {km:,} km")
-        if price is not None and price >= 50_000 and not no_price:
+        if price is not None and price >= 50_000:
             fails.append(f"price: {price:,} SAR")
 
         unknowns = []
