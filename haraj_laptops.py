@@ -37,7 +37,24 @@ except ImportError:
 
 
 BASE = "https://haraj.com.sa"
+LEGACY = "https://legacy.haraj.com.sa"
 OUT_DIR = "haraj_out"
+
+# The legacy site is server-rendered PHP, so listings sit in the HTML itself -
+# no JavaScript, no embedded-JSON hunting. Exact search paths are unverified,
+# so recon tries each and reports which ones return usable listings.
+SEARCH_PATTERNS = [
+    LEGACY + "/search/{q}",
+    LEGACY + "/index.php?s={q}",
+    LEGACY + "/search.php?q={q}",
+    LEGACY + "/tags/{q}",
+    BASE + "/search/{q}",
+]
+
+# Haraj posts live at /<numeric id>/<slug>. This is stable across both the
+# legacy and current sites and is the most reliable way to find listings
+# without knowing the page's CSS structure.
+POST_LINK_RE = re.compile(r'href="(?:https?://[^/"]+)?/(\d{7,})/([^"]*)"')
 
 # Search terms that actually surface business-class machines rather than
 # gaming rigs and MacBooks.
@@ -302,81 +319,150 @@ def walk_for_listings(node, found: list[dict], depth: int = 0) -> None:
             walk_for_listings(v, found, depth + 1)
 
 
-def recon(term: str) -> None:
-    os.makedirs(OUT_DIR, exist_ok=True)
-    url = f"{BASE}/search/{requests.utils.quote(term)}"
-    print(f"\n=== RECON: {url}")
-
-    try:
-        r = fetch(url)
-    except Exception as e:
-        print(f"  REQUEST FAILED: {type(e).__name__}: {e}")
-        return
-
-    print(f"  status      : {r.status_code}")
-    print(f"  length      : {len(r.text)} bytes")
-    print(f"  content-type: {r.headers.get('content-type')}")
-
-    path = os.path.join(OUT_DIR, "recon_raw.html")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(r.text)
-    print(f"  saved raw   : {path}")
-
-    data = extract_embedded_json(r.text)
-    if data:
-        print("  embedded JSON: FOUND")
-        jpath = os.path.join(OUT_DIR, "recon_data.json")
-        with open(jpath, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False, indent=2)
-        print(f"  saved json  : {jpath}")
-
-        found: list[dict] = []
-        walk_for_listings(data, found)
-        print(f"  listing-shaped objects: {len(found)}")
-        if found:
-            print("  sample keys:", sorted(found[0].keys())[:20])
-    else:
-        print("  embedded JSON: NOT FOUND")
-        print("  -> the page is probably rendered client-side via an API.")
-        print("     Send me recon_raw.html and I'll find the endpoint.")
-
-    hits = len(re.findall(r"ريال|SAR", r.text))
-    print(f"  price-like tokens in body: {hits}")
-    print("\n  NEXT STEP: send haraj_out/recon_raw.html (or recon_data.json) to Claude.")
+TAG_RE = re.compile(r"<[^>]+>")
+ENTITY_RE = re.compile(r"&[a-z]+;|&#\d+;")
 
 
-def search(term: str, pages: int = 1) -> list[Listing]:
+def strip_tags(html: str) -> str:
+    """Crude but dependency-free HTML -> text."""
+    text = re.sub(r"<(script|style)\b.*?</\1>", " ", html, flags=re.DOTALL | re.I)
+    text = TAG_RE.sub(" ", text)
+    text = ENTITY_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def extract_listings_from_html(html: str, base: str) -> list[Listing]:
+    """
+    Pull listings out of a server-rendered page without knowing its CSS.
+
+    Finds every /<id>/<slug> post link, then takes the HTML between that link
+    and the next one as the listing's context - which is where the price, city
+    and specs live. Structure-agnostic, so it survives layout changes.
+    """
+    matches = list(POST_LINK_RE.finditer(html))
     listings: list[Listing] = []
-    for page in range(1, pages + 1):
-        url = f"{BASE}/search/{requests.utils.quote(term)}"
-        if page > 1:
-            url += f"?page={page}"
+    seen: set[str] = set()
+
+    for i, m in enumerate(matches):
+        post_id, slug = m.group(1), m.group(2)
+        if post_id in seen:
+            continue
+        seen.add(post_id)
+
+        end = matches[i + 1].start() if i + 1 < len(matches) else m.end() + 800
+        context = strip_tags(html[m.start():min(end, m.start() + 1500)])
+
+        # The slug is a URL-encoded version of the title; decode as a fallback
+        # for pages where the anchor text is an image or icon.
+        try:
+            slug_text = requests.utils.unquote(slug).replace("_", " ").strip("/ ")
+        except Exception:
+            slug_text = ""
+
+        listings.append(
+            Listing(
+                title=(slug_text or context[:80]),
+                body=context,
+                url=f"{base}/{post_id}/",
+            )
+        )
+    return listings
+
+
+def recon(term: str) -> None:
+    """Try every candidate search URL and report which ones actually work."""
+    os.makedirs(OUT_DIR, exist_ok=True)
+    q = requests.utils.quote(term)
+    best: tuple[int, str, str] | None = None
+
+    print(f"\n=== RECON for term: {term}\n")
+    for pattern in SEARCH_PATTERNS:
+        url = pattern.format(q=q)
         try:
             r = fetch(url)
         except Exception as e:
-            print(f"  [{term} p{page}] request failed: {e}", file=sys.stderr)
-            continue
-        if r.status_code != 200:
-            print(f"  [{term} p{page}] HTTP {r.status_code}", file=sys.stderr)
+            print(f"  FAIL  {url}\n        {type(e).__name__}: {e}")
             continue
 
-        data = extract_embedded_json(r.text)
-        if not data:
-            print(f"  [{term} p{page}] no embedded JSON - run --recon", file=sys.stderr)
-            continue
+        found = extract_listings_from_html(r.text, LEGACY)
+        prices = len(re.findall(r"ريال|SAR", r.text))
+        has_json = extract_embedded_json(r.text) is not None
 
-        raw: list[dict] = []
-        walk_for_listings(data, raw)
-        for item in raw:
-            listings.append(
-                Listing(
-                    title=str(item.get("title") or item.get("postTitle") or ""),
-                    body=str(item.get("bodyTEXT") or item.get("body") or ""),
-                    city=str(item.get("city") or item.get("cityName") or ""),
-                    url=f"{BASE}/{item.get('id') or item.get('postId') or ''}",
-                )
-            )
-        time.sleep(1.5)  # be polite
+        print(f"  HTTP {r.status_code}  {len(r.text):>7}b  "
+              f"listings={len(found):<4} prices={prices:<4} json={has_json}")
+        print(f"        {url}")
+
+        if r.status_code == 200 and (best is None or len(found) > best[0]):
+            best = (len(found), url, r.text)
+        time.sleep(1.0)
+
+    if best is None:
+        print("\n  Nothing reachable. Check your connection, then send me this output.")
+        return
+
+    count, url, body = best
+    path = os.path.join(OUT_DIR, "recon_raw.html")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+    print(f"\n  BEST: {url}  ({count} listings)")
+    print(f"  Saved raw HTML -> {path}")
+
+    if count:
+        print("\n  Sample of what was parsed:")
+        for lst in extract_listings_from_html(body, LEGACY)[:3]:
+            ev = evaluate(lst)
+            print(f"    - {lst.title[:60]}")
+            print(f"      price={ev.price} gen={ev.cpu_gen} ram={ev.ram_gb} "
+                  f"score={ev.score}")
+        print("\n  Parsing works. Run without --recon to search for real.")
+    else:
+        print("\n  Page fetched but no listings parsed - the link format differs.")
+        print("  Send me haraj_out/recon_raw.html and I'll fix the pattern.")
+
+
+def search(term: str, pages: int = 1) -> list[Listing]:
+    """Search every candidate URL pattern, keeping whatever yields listings."""
+    listings: list[Listing] = []
+    q = requests.utils.quote(term)
+
+    for pattern in SEARCH_PATTERNS:
+        for page in range(1, pages + 1):
+            url = pattern.format(q=q)
+            if page > 1:
+                url += ("&" if "?" in url else "?") + f"page={page}"
+            try:
+                r = fetch(url)
+            except Exception as e:
+                print(f"  [{term}] {type(e).__name__}: {e}", file=sys.stderr)
+                break
+            if r.status_code != 200:
+                break
+
+            batch = extract_listings_from_html(r.text, LEGACY)
+
+            # Fall back to embedded JSON if this is the modern SPA.
+            if not batch:
+                data = extract_embedded_json(r.text)
+                if data:
+                    raw: list[dict] = []
+                    walk_for_listings(data, raw)
+                    batch = [
+                        Listing(
+                            title=str(item.get("title") or ""),
+                            body=str(item.get("bodyTEXT") or item.get("body") or ""),
+                            city=str(item.get("city") or ""),
+                            url=f"{BASE}/{item.get('id') or ''}/",
+                        )
+                        for item in raw
+                    ]
+
+            listings.extend(batch)
+            time.sleep(1.5)  # be polite
+
+        if listings:  # this pattern worked; no need to try the rest
+            break
+
     return listings
 
 
