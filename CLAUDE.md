@@ -52,6 +52,7 @@ Retry the push on network failure (2s, 4s, 8s, 16s). If the push cannot succeed,
 | `research` | every researched candidate (incl. failures — never re-research needlessly) |
 | `search_state` | single-row cursor: year, month, last_candidate, last_action, last_search_date, range_end_year |
 | `recommendation_history` | every shown recommendation + outcome |
+| `candidate_pool` | per-year list built from Rotten Tomatoes: basic filter result, queue order, mood_state pending/checked |
 | `blocked_titles` (view) | everything with `block_recommend=1` |
 
 ---
@@ -98,15 +99,22 @@ Example: "هذا بطيء جدا لم يعجبني مللت منه من اول �
 
 ## 4. Search loop ("اكمل" / "استمر" / "ابحث")
 
-1. Read `search_state`. Continue from that **exact** year/month. Never restart.
-2. Order: current year Jan→Dec (skip months that haven't happened yet), then previous year Jan→Dec, and so on down to `range_end_year`.
-3. For the current month, find English-language (primarily) theatrical/streaming releases in the wanted genres. Skip any title already in `movies` (blocked, researched_failed, etc.) unless `needs_reevaluation`.
-   `needs_reevaluation` titles (Shelter 2026, Send Help 2026) must get a full fresh §5 research before they can ever be shown.
-4. Quick-screen against hard exclusions; anything excluded → record in `movies` (status=researched_failed) + a short `research` row (verdict=reject) so it is never re-checked.
-5. Survivors → full research (§5) and scoring (§6).
-6. After **each** candidate/batch: update `search_state` (year, month, last_candidate, last_action, last_search_date=today) and commit+push.
-7. Month exhausted → next month. Year exhausted → previous year. **Do not stop and do not ask "هل تريدني أن أكمل؟"** — the instruction is already clear.
-8. Stop only when a candidate clears the bar → show it (§7), or the range down to `range_end_year` is exhausted → tell the user and ask whether to extend the range.
+**Method mandated by the user: list first, then examine one by one. Never discover candidates by keyword web searches.**
+
+1. Read `search_state` and `candidate_pool`. Continue from the exact place. Never restart.
+2. **Build the year's pool (once per year)** if `candidate_pool` has no rows for `scope_year = search_state.year`:
+   - Pull Rotten Tomatoes lists via the JSON endpoint (curl/python inline, `User-Agent: Mozilla/5.0`):
+     `https://www.rottentomatoes.com/cnapi/browse/{movies_at_home|movies_in_theaters}/genres:{action|mystery_and_thriller|crime|adventure}~sort:newest[?after=<endCursor>]`
+     Page with `pageInfo.endCursor` until listed dates fall before that year.
+   - For each title fetch its RT page (`https://www.rottentomatoes.com/m/...`) and read JSON-LD genre + cast + director, plus Original Language, Runtime, Release Date (Theaters), Box Office, synopsis.
+   - Insert every title into `candidate_pool` and apply only the **minimal basic conditions**: type Movie · has a Tomatometer score · not already in `movies` · English original language · no hard-excluded genre (Animation, Documentary, Horror, Sci-Fi, Fantasy, Musical, War, History, Kids, Biography) · no hard-excluded setting/topic visible in the synopsis (period, political, military, franchise, comedy-first). Set `basic_filter` pass/fail + `basic_reason`.
+   - Give each passing title a `queue_order` (best apparent fit first).
+3. **Examine the queue one by one** (`mood_state='pending'`, lowest `queue_order`): full research (§5) + scoring (§6). Record in `movies` + `research`, set `mood_state='checked'`, update `search_state.last_candidate`, commit+push.
+4. First title that clears the bar → show it (§7) and stop.
+5. Queue for the year exhausted → move to the previous year and build its pool. **Do not stop and do not ask "هل تريدني أن أكمل؟"**.
+6. Stop at `range_end_year` and ask whether to extend.
+
+Titles in `needs_reevaluation` or `candidate` status (unreleased: How to Rob a Bank 2026, Cliffhanger 2027) must get a fresh full check before ever being shown.
 
 ---
 
