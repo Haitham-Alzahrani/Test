@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}قائمة البحث{% endblock %}
+{% block content %}
+<h1>قائمة البحث</h1>
+<div class="card">
+  الموضع: <span class="ltr">{{ s.cursor.position }}</span> · {{ s.cursor.status }} ·
+  تم فحص {{ s.cursor.evaluated }} · مرفوض {{ s.cursor.rejected }} · ناجح {{ s.cursor.passed }}
+  <div class="muted">{% for k, v in s.candidates.items() %}<span class="tag ltr">{{ k }}: {{ v }}</span>{% endfor %}</div>
+  <form method="post" action="/ui/research/continue" style="margin-top:10px"><button>اكمل البحث</button></form>
+</div>
+<h2>الطابور</h2>
+<div class="scroll"><table>
+<tr><th>الفترة</th><th>#</th><th>المرشح</th><th>الفئة</th><th>الحالة</th><th>آخر فحص</th></tr>
+{% for i in queue %}
+<tr><td class="ltr">{{ i.year }}-{{ '%02d'|format(i.month) }}</td><td>{{ i.sort_order }}</td><td class="ltr">{{ i.candidate }}</td>
+<td>{{ i.release_category }}</td><td><span class="tag">{{ i.research_status }}</span></td>
+<td class="muted">{{ i.last_checked.strftime('%Y-%m-%d %H:%M') if i.last_checked else '' }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">الطابور فارغ</td></tr>{% endfor %}
+</table></div>
+<h2>آخر الأحداث</h2>
+<div class="scroll"><table>
+<tr><th>الوقت</th><th>النوع</th><th>الخطوة</th><th>الرسالة</th></tr>
+{% for e in events %}
+<tr><td class="muted">{{ e.created_at.strftime('%m-%d %H:%M:%S') }}</td><td>{{ e.event_type }}</td><td>{{ e.step or '' }}</td><td class="ltr">{{ e.message }}</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

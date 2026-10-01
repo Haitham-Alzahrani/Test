@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRIS — {% block title %}لوحة التحكم{% endblock %}</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --border: #e3e6ec;
+    --accent: #b4232c; --accent-soft: #fbe9ea; --good: #13795b; --warn: #a15c07; --bad: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --panel: #1a1e24; --text: #e7e9ee; --muted: #98a2b3; --border: #2b313a;
+            --accent: #ef5d66; --accent-soft: #3a1f22; --good: #3ccf91; --warn: #f2b84b; --bad: #f97066; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--border); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+  .top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 0; }
+  .brand { font-weight: 700; color: var(--accent); letter-spacing: .5px; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+  nav a.on, nav a:hover { color: var(--text); background: var(--accent-soft); }
+  main { padding: 24px 0 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  h2 { font-size: 17px; margin: 24px 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .stat .n { font-size: 26px; font-weight: 700; }
+  .stat .l { color: var(--muted); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border);
+          border-radius: 12px; overflow: hidden; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  tr:last-child td { border-bottom: 0; }
+  .scroll { overflow-x: auto; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+         background: var(--accent-soft); margin: 1px 2px; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .muted { color: var(--muted); }
+  pre.reply { white-space: pre-wrap; background: var(--panel); border: 1px solid var(--border); border-inline-start: 4px solid var(--accent);
+              border-radius: 10px; padding: 14px 16px; font: inherit; margin: 0 0 16px; }
+  form.inline { display: flex; gap: 8px; flex-wrap: wrap; }
+  input, button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+                  background: var(--panel); color: var(--text); }
+  input[type=text] { flex: 1; min-width: 200px; }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  .ltr { direction: ltr; unicode-bidi: isolate; }
+</style>
+</head>
+<body>
+<header><div class="wrap top">
+  <span class="brand">MRIS</span>
+  <nav>
+    <a href="/" class="{{ 'on' if active == 'dashboard' }}">الرئيسية</a>
+    <a href="/ui/movies" class="{{ 'on' if active == 'movies' }}">الأفلام</a>
+    <a href="/ui/watchlist" class="{{ 'on' if active == 'watchlist' }}">للمشاهدة لاحقًا</a>
+    <a href="/ui/rejected" class="{{ 'on' if active == 'rejected' }}">المرفوضة</a>
+    <a href="/ui/references" class="{{ 'on' if active == 'references' }}">المرجعية</a>
+    <a href="/ui/preferences" class="{{ 'on' if active == 'preferences' }}">التفضيلات</a>
+    <a href="/ui/research" class="{{ 'on' if active == 'research' }}">قائمة البحث</a>
+    <a href="/ui/history" class="{{ 'on' if active == 'history' }}">سجل الاقتراحات</a>
+  </nav>
+</div></header>
+<main><div class="wrap">
+{% block content %}{% endblock %}
+</div></main>
+</body>
+</html>

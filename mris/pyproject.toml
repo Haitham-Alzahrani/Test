@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mris"
+version = "1.0.0"
+description = "Movie Recommendation Intelligence System - a personal, evidence-based movie recommender with persistent taste memory."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "typer>=0.12",
+    "rich>=13.7",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[project.scripts]
+mris = "mris.cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mris"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"migrations" = "mris/_migrations"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:fastapi.testclient", "ignore:Using `httpx` with `starlette.testclient`"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# phrase lexicons, seed data and user-facing message tables are long string literals
+"src/mris/research/lexicon.py" = ["E501"]
+"src/mris/memory/{seed,vocabulary,parser}.py" = ["E501"]
+"src/mris/recommendation/formatter.py" = ["E501"]
+"src/mris/service.py" = ["E501"]
+"migrations/versions/*.py" = ["E501"]

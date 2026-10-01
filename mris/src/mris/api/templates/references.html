@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}الأفلام المرجعية{% endblock %}
+{% block content %}
+<h1>الأفلام المرجعية</h1>
+<div class="scroll"><table>
+<tr><th>الفيلم</th><th>التقييم</th><th>الأهمية</th><th>الخصائص</th></tr>
+{% for r, traits in rows %}
+<tr><td class="ltr">{{ r.movie.title }}{% if r.movie.year %} ({{ r.movie.year }}){% endif %}</td>
+<td>{{ r.notes or r.rating_label }}</td><td><span class="tag">{{ r.importance }}</span></td>
+<td>{% for t, v in traits.items() if v >= 0.5 %}<span class="tag">{{ t }}</span>{% endfor %}</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

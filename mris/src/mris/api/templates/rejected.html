@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}المرفوضة{% endblock %}
+{% block content %}
+<h1>الأفلام المرفوضة</h1>
+<p class="muted">هذه القائمة لا تظهر أبدًا ضمن الاقتراحات — وجودها فقط لمنع إعادة اقتراح هذه الأفلام.</p>
+<div class="scroll"><table>
+<tr><th>الفيلم</th><th>التاريخ</th><th>المصدر</th><th>الثقة</th><th>السبب</th></tr>
+{% for r in rows %}
+<tr><td class="ltr">{{ r.title }}{% if r.year %} ({{ r.year }}){% endif %}</td><td>{{ r.rejection_date.strftime('%Y-%m-%d') }}</td>
+<td><span class="tag">{{ r.source_of_rejection }}</span></td><td>{{ r.confidence }}</td><td class="muted ltr">{{ r.rejection_reason }}</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

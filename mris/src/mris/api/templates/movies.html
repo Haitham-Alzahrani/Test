@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}الأفلام{% endblock %}
+{% block content %}
+<h1>الأفلام التي شاهدتها</h1>
+<form class="inline" method="get" style="margin-bottom:12px"><input type="text" name="q" value="{{ q }}" placeholder="بحث بالعنوان"><button>بحث</button></form>
+<div class="scroll"><table>
+<tr><th>الفيلم</th><th>التقييم</th><th>نقاط قوة</th><th>نقاط ضعف</th><th>ملاحظات</th></tr>
+{% for f in rows %}
+<tr>
+  <td class="ltr">{{ f.movie.title }}{% if f.movie.year %} ({{ f.movie.year }}){% endif %}{% if f.movie.media_type == 'tv' %} <span class="tag">TV</span>{% endif %}</td>
+  <td><span class="tag {{ 'good' if f.rating_label in ('loved','excellent') else 'bad' if f.rating_label == 'disliked' else 'warn' if f.rating_label in ('medium','average','medium_low') else '' }}">{{ f.rating_label }}</span>{% if f.rating_value %} {{ f.rating_value }}/10{% endif %}</td>
+  <td>{% for t in f.positive_traits %}<span class="tag">{{ t }}</span>{% endfor %}</td>
+  <td>{% for t in f.negative_traits %}<span class="tag">{{ t }}</span>{% endfor %}</td>
+  <td class="muted">{{ f.reason_text or '' }}</td>
+</tr>
+{% endfor %}
+</table></div>
+{% endblock %}

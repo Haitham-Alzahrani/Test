@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}للمشاهدة لاحقًا{% endblock %}
+{% block content %}
+<h1>للمشاهدة لاحقًا</h1>
+<form class="inline" method="post" action="/ui/watchlist" style="margin-bottom:12px">
+  <input type="text" name="title" placeholder="العنوان" required>
+  <input type="text" name="year" placeholder="السنة" style="max-width:110px;flex:0">
+  <input type="text" name="note" placeholder="ملاحظة">
+  <button>إضافة</button>
+</form>
+<div class="scroll"><table>
+<tr><th>الفيلم</th><th>أضيف</th><th>ملاحظة</th></tr>
+{% for e in rows %}
+<tr><td class="ltr">{{ e.movie.title }}{% if e.movie.year %} ({{ e.movie.year }}){% endif %}</td><td>{{ e.added_at.strftime('%Y-%m-%d') }}</td><td class="muted">{{ e.note or '' }}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">القائمة فارغة</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

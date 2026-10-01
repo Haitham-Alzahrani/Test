@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}سجل الاقتراحات{% endblock %}
+{% block content %}
+<h1>سجل الاقتراحات</h1>
+<div class="scroll"><table>
+<tr><th>التاريخ</th><th>الفيلم</th><th>الثقة</th><th>السبب</th><th>ردك</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.recommended_at.strftime('%Y-%m-%d') }}</td><td class="ltr">{{ r.movie.title }}{% if r.movie.year %} ({{ r.movie.year }}){% endif %}</td>
+<td>{{ r.confidence or '' }}</td><td class="muted ltr">{{ r.reason or '' }}</td><td><span class="tag">{{ r.user_response }}</span></td></tr>
+{% else %}<tr><td colspan="5" class="muted">لا توجد اقتراحات بعد</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

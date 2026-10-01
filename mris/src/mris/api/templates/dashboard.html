@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>لوحة التحكم — {{ s.user }}</h1>
+{% if reply %}<pre class="reply">{{ reply }}</pre>{% endif %}
+<div class="grid">
+  <div class="card stat"><div class="n">{{ s.watched }}</div><div class="l">أفلام شاهدتها</div></div>
+  <div class="card stat"><div class="n good">{{ s.loved }}</div><div class="l">أحببتها جدًا</div></div>
+  <div class="card stat"><div class="n">{{ s.liked }}</div><div class="l">أعجبتك</div></div>
+  <div class="card stat"><div class="n warn">{{ s.medium }}</div><div class="l">متوسطة</div></div>
+  <div class="card stat"><div class="n bad">{{ s.disliked }}</div><div class="l">لم تعجبك</div></div>
+  <div class="card stat"><div class="n">{{ s.watchlist }}</div><div class="l">للمشاهدة لاحقًا</div></div>
+  <div class="card stat"><div class="n">{{ s.rejected }}</div><div class="l">مرفوضة</div></div>
+  <div class="card stat"><div class="n">{{ s.cursor.evaluated }}</div><div class="l">مرشحون تم فحصهم</div></div>
+</div>
+
+<h2>موضع البحث</h2>
+<div class="card">
+  <div><span class="ltr">{{ s.cursor.position }}</span> · {{ s.cursor.status }} · آخر مرشح: <span class="ltr">{{ s.cursor.last_candidate or '—' }}</span></div>
+  <div class="muted">النطاق: <span class="ltr">{{ s.cursor.range }}</span> · مرفوض: {{ s.cursor.rejected }} · ناجح: {{ s.cursor.passed }}</div>
+  <form method="post" action="/ui/research/continue" style="margin-top:10px"><button>اكمل البحث</button></form>
+</div>
+
+<h2>آخر اقتراح</h2>
+<div class="card">
+  {% if last %}<span class="ltr">{{ last.movie.title }}{% if last.movie.year %} ({{ last.movie.year }}){% endif %}</span>
+  · <span class="muted">{{ last.recommended_at.strftime('%Y-%m-%d') }} · {{ last.user_response }}</span>
+  {% else %}<span class="muted">لا يوجد بعد</span>{% endif %}
+</div>
+
+<h2>اكتب رسالة</h2>
+<form class="inline" method="post" action="/ui/message">
+  <input type="text" name="text" placeholder="مثال: اكمل · اقترح فيلم · Mutiny عجبني جدًا · ضعه للمشاهدة لاحقًا" required>
+  <button>إرسال</button>
+</form>
+
+<h2>مزودو البيانات</h2>
+<div class="card">{% for k, v in s.providers.items() %}<span class="tag ltr">{{ k }}: {{ v }}</span>{% endfor %}</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}التفضيلات{% endblock %}
+{% block content %}
+<h1>التفضيلات — {{ user.name }}</h1>
+<div class="card">
+  {% for rule in user.profile.get('critical_rules', []) %}<div class="ltr" style="text-align:left">• {{ rule }}</div>{% endfor %}
+</div>
+{% set titles = {'weight': 'أوزان التقييم (من 100)', 'penalty': 'العقوبات', 'exclusion': 'الاستبعاد التلقائي', 'threshold': 'العتبات', 'trait_affinity': 'الميول المتعلَّمة (-1 … +1)'} %}
+{% for type in ['weight', 'penalty', 'threshold', 'exclusion', 'trait_affinity'] if type in grouped %}
+<h2>{{ titles[type] }}</h2>
+<div class="scroll"><table>
+<tr><th>المفتاح</th><th>القيمة</th><th>مفعّل</th><th>المصدر</th><th>ملاحظات</th></tr>
+{% for r in grouped[type] %}
+<tr><td class="ltr">{{ r.key }}</td><td class="ltr {{ 'good' if type == 'trait_affinity' and r.value > 0 else 'bad' if type == 'trait_affinity' and r.value < 0 else '' }}">{{ '%g'|format(r.value) }}</td>
+<td>{{ 'نعم' if r.enabled else 'لا' }}</td><td><span class="tag">{{ r.source }}</span></td><td class="muted ltr">{{ r.notes or '' }}</td></tr>
+{% endfor %}
+</table></div>
+{% endfor %}
+{% if actors %}<h2>تفضيلات الممثلين</h2>
+<div class="scroll"><table><tr><th>الممثل</th><th>النطاق</th><th>السبب</th></tr>
+{% for a in actors %}<tr><td class="ltr">{{ a.actor_name }}</td><td>{{ a.scope }}</td><td class="muted">{{ a.reason or '' }}</td></tr>{% endfor %}
+</table></div>{% endif %}
+{% if franchises %}<h2>السلاسل</h2>
+<div class="scroll"><table><tr><th>السلسلة</th><th>الاعتماد</th><th>مرفوضة</th><th>ملاحظات</th></tr>
+{% for f in franchises %}<tr><td class="ltr">{{ f.franchise_name }}</td><td>{{ f.dependency_level }}</td><td>{{ 'نعم' if f.franchise_rejected else 'لا' }}</td><td class="muted ltr">{{ f.notes or '' }}</td></tr>{% endfor %}
+</table></div>{% endif %}
+{% endblock %}
